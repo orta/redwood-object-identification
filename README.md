@@ -132,7 +132,7 @@ export const node = (args: { id: string }) => {
 
 Basically, by looking at the end of the `ID` we can know which underlying graphql resolver we should forward the request to, this means no duplication of access control inside the `node` function - it just forwards to other resolvers.
 
-The next thing you would hit is kind of only something you hit when you try this in practice. We're now writing to `interface`s and not concrete types, which means there are new GraphQL things to handle. We have to have a way in the GraphQL server to go from an `interface` (or `union`) to the concrete type.
+The next thing you would hit is kind of only something you hit when you try this in practice. We're now writing to `interface`s and not concrete types, which means there are new GraphQL things to handle. We have to have [a way in](https://github.com/graphql/graphql-js/issues/876#issuecomment-304398882) the GraphQL server to go from an `interface` (or `union`) to the concrete type.
 
 That is done by one of two methods, depending on your needs:
 
@@ -177,3 +177,44 @@ export const handler = createGraphQLHandler({
 })
 
 ```
+
+The real implementation in this app is a little more abstract [`/api/src/services/objectIdentification.ts](./api/src/services/objectIdentification.ts) but it does the work well. Then you can see the new `DeleteButton` which I added using the `deleteNode`:
+
+```ts
+import { navigate, routes } from "@redwoodjs/router"
+import { useMutation } from "@redwoodjs/web"
+import { toast } from "@redwoodjs/web/dist/toast"
+
+const DELETE_NODE_MUTATION = gql`
+  mutation DeleteNodeMutation($id: ID!) {
+    deleteNode(id: $id) {
+      id
+    }
+  }
+`
+
+export const DeleteButton = (props: { id: string; displayName: string }) => {
+  const [deleteUser] = useMutation(DELETE_NODE_MUTATION, {
+    onCompleted: () => {
+      toast.success(`${props.displayName} deleted`)
+      navigate(routes.users())
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
+
+  const onDeleteClick = () => {
+    if (confirm(`Are you sure you want to delete ${props.displayName}?`)) {
+      deleteUser({ variables: { id: props.id } })
+    }
+  }
+  return (
+    <button type="button" title={`Delete ${props.displayName}`} className="rw-button rw-button-small rw-button-red" onClick={onDeleteClick}>
+      Delete
+    </button>
+  )
+}
+```
+
+It can delete any object which conforms to the `Node` protocol. :+1:
