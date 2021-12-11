@@ -28,7 +28,7 @@ type Mutation {
 }
 ```
 
-This is useful for the sample because I only need one model to be useful and also because [queries](https://github.com/redwoodjs/redwood/issues/3873) with inline fragments crash ATM.
+This is useful for the sample because I only need one model to be useful and also because [queries](https://github.com/redwoodjs/redwood/issues/3873) with inline fragments crash with RedwoodJS' `gql` ATM, [I sent a fix](https://github.com/redwoodjs/redwood/pull/3891).
 
 ## Getting Set Up
 
