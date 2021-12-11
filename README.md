@@ -16,7 +16,7 @@ type Query {
 }
 ```
 
-This is interesting, because now you have a guaranteed query to be able to get the info for any object in your graph! This feature gives you a [bunch of caching super-powers in Relay](https://relay.dev/docs/guided-tour/reusing-cached-data/) and probably with Apollo (I don't know their caching strats, but it would make re-fetching trivial).
+This is cool, because now you have a guaranteed query to be able to get the info for any object in your graph! This feature gives you a [bunch of caching super-powers in Relay](https://relay.dev/docs/guided-tour/reusing-cached-data/) and probably with Apollo (I don't know their caching strats intimately, but it would make re-fetching any object trivial).
 
 ## This Repo
 
