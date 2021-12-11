@@ -20,5 +20,9 @@
   },
   "prisma": {
     "seed": "yarn rw exec seed"
+  },
+  "prettier": {
+    "printWidth": 140,
+    "semi": false
   }
 }
