@@ -32,7 +32,9 @@ This is useful for the sample because I only need one model to be useful and als
 
 ## Getting Set Up
 
-1. We're going to need some GraphQL SDL and corresponding resolvers:
+### 1. SDL + Resolvers
+
+We're going to need some GraphQL SDL and corresponding resolvers
 
 > [`api/src/graphql/objectIdentification.sdl.ts`](./api/src/graphql/objectIdentification.sdl.ts):
 
@@ -56,9 +58,9 @@ export const schema = gql`
 
 This sets up some new graphql fields, and declares the new primitive `ID` which is an arbitrary string under the hood.
 
-To understand the `ID`, let's look at how I implement it in
+To understand the `ID`, let's look at how I implement it in the `createUser` resolver
 
-> [`./api/src/services/users/users.ts`](./api/src/services/users/users.ts):
+> [`./api/src/services/users/users.ts`](./api/src/services/users/users.ts`):
 ```ts
 import cuid from "cuid"
 import { db } from "src/lib/db"
@@ -81,16 +83,16 @@ model User {
 }
 ```
 
-This... doesn't _really_ work in the Object Identification era because a `cuid` is as good UUID, but there's no (safe/simple/easy) of going from the UUID string back to the original object without
+This... doesn't _really_ work in the Object Identification era because a `cuid` is as good UUID, but there's no (safe/simple/easy) way of going from the UUID string back to the original object because it's basically random digits. A route we use at Artsy was to base64 encode that [metadata into the id](https://github.com/artsy/README/blob/main/playbooks/graphql-schema-design.md#global-object-identification).
 
 <details>
   <summary markdown="span">Really though?</summary>
 
-I had a few ideas for this, starting with making an object-identification query that looks in all potential db tables via a custom query... That's a bit dangerous and then you need to figure out which table you found the object in and _then_ start thinking about that objects access rights. That's tricky.
+I had a few ideas for generating thse keys within the framework of letting prisma handle it, starting with making an object-identification query that looks in all potential db tables via a custom query... That's a bit dangerous and then you need to figure out which table you found the object in and _then_ start thinking about that objects access rights. That's tricky.
 
-Another alternative I explored was having prisma generate a `dbID` via  `dbID String @id @default(cuid())` then have a postgres function run on a row write to generate an `id` with the suffix indicating the type. This kinda worked, but was a bit meh. At that point I gave up on letting prisma handle it at all.
+Another alternative I explored was having prisma generate a `dbID` via  `dbID String @id @default(cuid())` then have a postgres function run on a row write to generate an `id` with the suffix indicating the type. This kinda worked, but was a bit meh answer to me. At that point I gave up on letting prisma handle it at all.
 
-So I recommend having a totally globally unique `id` via a cuid + prefix, and then have a `slug` if you ever need to present it to the user via a URL.
+So, I recommend _you_ taking control of generating the id in your app's code by having a totally globally unique `id` via a cuid + prefix, and then have a `slug` if you ever need to present it to the user via a URL.
 
 To handle this case, I've been using this for resolving a single item:
 
@@ -108,15 +110,18 @@ Which allows you to resolve a user with either `slug` or `id`.
 
 </details>
 
-So instead:
+So instead now it looks like:
 
-```prisma
+```diff
 model User {
-  id String  @id @unique
++ id String  @id @unique
+- id String @id @default(cuid())
 }
 ```
 
-Under the hood `ID` is a real `cuid` mixed with an identifier prefix which lets you know which object it came from. The simplest implementation would look like this:
+### 2. ID Implementation
+
+Under the hood `ID` is a real `cuid` mixed with an identifier prefix which lets you know which model it came from. The simplest implementation would of the `node` resolver look like this:
 
 ```ts
 import { user } from "./users/users"
@@ -130,16 +135,18 @@ export const node = (args: { id: string }) => {
 }
 ```
 
-Basically, by looking at the end of the `ID` we can know which underlying graphql resolver we should forward the request to, this means no duplication of access control inside the `node` function - it just forwards to other resolvers.
+Basically, by looking at the end of the `ID` we can know which underlying graphql resolver we should forward the request to, this means no duplication of access control inside the `node` function - it just forwards to the other existing GraphQL resolvers.
 
-The next thing you would hit is kind of only something you hit when you try this in practice. We're now writing to `interface`s and not concrete types, which means there are new GraphQL things to handle. We have to have [a way in](https://github.com/graphql/graphql-js/issues/876#issuecomment-304398882) the GraphQL server to go from an `interface` (or `union`) to the concrete type.
+### 3. Disambiguation
+
+The next thing you would hit is kind of only something you hit when you try this in practice. We're now writing to `interface`s and not concrete types, which means there are new GraphQL things to handle. We need to have [a way in](https://github.com/graphql/graphql-js/issues/876#issuecomment-304398882) the GraphQL server to go from an `interface` (or `union`) to the concrete type.
 
 That is done by one of two methods, depending on your needs:
 
-- A single function which can disambiguate the types ( `Node.resolveType` )
-- Each concrete type can have a way to declare if the JS object is one of this GraphQL type ( `User.isTypeOf` )
+- A single function on the interface which can disambiguate the types ( `Node.resolveType` )
+- Or each concrete type can have a way to declare if the JS object / ID is one of it's own GraphQL type ( `User.isTypeOf` (and for every other model) )
 
-Now, today (v1.0rc), doing either of these things isn't possible via the normal RedwoodJS APIs, it's complicated but roughly the `*.sdl.ts` files only let you create resolvers and not manipulate the schema objects in your app. So, we'll write a quick `envelop` plugin do handle that for us:
+Now, today (as of RedwoodJS v1.0rc), doing either of these things isn't possible via the normal RedwoodJS APIs, it's complicated but roughly the `*.sdl.ts` files only let you create resolvers and not manipulate the schema objects in your app. So, we'll write a quick `envelop` plugin do handle that for us:
 
 ```ts
 export const createNodeResolveEnvelopPlugin = (): Plugin => {
@@ -156,7 +163,6 @@ export const createNodeResolveEnvelopPlugin = (): Plugin => {
     }
   }
 }
-
 ```
 
 And then add that to the graphql function:
@@ -178,7 +184,11 @@ export const handler = createGraphQLHandler({
 
 ```
 
-The real implementation in this app is a little more abstract [`/api/src/services/objectIdentification.ts](./api/src/services/objectIdentification.ts) but it does the work well. Then you can see the new `DeleteButton` which I added using the `deleteNode`:
+The real implementation in this app is a little more abstract [`/api/src/services/objectIdentification.ts](./api/src/services/objectIdentification.ts) but it does the work well.
+
+### 4. Usage
+
+Finally, an actual outcome, you can see the new `DeleteButton` which I added in this repo using the `deleteNode` resolver which has a lot of similar patterns as the `node` resolver under the hood:
 
 ```ts
 import { navigate, routes } from "@redwoodjs/router"
@@ -217,4 +227,4 @@ export const DeleteButton = (props: { id: string; displayName: string }) => {
 }
 ```
 
-It can delete any object which conforms to the `Node` protocol. :+1:
+It can delete any object which conforms to the `Node` protocol in your app, making it DRY and type-safe - and because it also forwards to each model's "delete node" resolver then it also gets all of the access control right checks in those functions too. :+1:
